@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="185.88" height="185.88" viewBox="0 0 185.88 185.88">
+  <defs>
+    <clipPath id="a" transform="translate(11.81 11.84)">
+      <path d="M81.14,0a81.12,81.12,0,1,0,81.09,81.14v0A81.19,81.19,0,0,0,81.14,0m0,151.76A70.7,70.7,0,1,1,151.78,81v.11a70.81,70.81,0,0,1-70.64,70.64" style="fill: none"/>
+    </clipPath>
+    <clipPath id="b" transform="translate(11.81 11.84)">
+      <rect x="-2651.56" y="-530.27" width="3787" height="2130.19" style="fill: none"/>
+    </clipPath>
+    <clipPath id="c" transform="translate(11.81 11.84)">
+      <path d="M81.14,22.76A58.3,58.3,0,0,0,45.2,127a50.44,50.44,0,0,1,5.61-8.82,47.9,47.9,0,1,1,60.71,0,51.63,51.63,0,0,1,5.64,8.8,58.33,58.33,0,0,0-36-104.24" style="fill: none"/>
+    </clipPath>
+    <clipPath id="e" transform="translate(11.81 11.84)">
+      <path d="M81.14,45.76A35.4,35.4,0,0,0,60,109.44,38,38,0,0,1,71.2,104a24.91,24.91,0,1,1,19.93,0,37.56,37.56,0,0,1,11.21,5.43,35.41,35.41,0,0,0-21.2-63.61" style="fill: none"/>
+    </clipPath>
+  </defs>
+  <g>
+    <g style="clip-path: url(#a)">
+      <g style="clip-path: url(#b)">
+        <rect width="185.88" height="185.88" style="fill: #3d1c47"/>
+      </g>
+    </g>
+    <g style="clip-path: url(#c)">
+      <g style="clip-path: url(#b)">
+        <rect x="22.76" y="22.76" width="140.35" height="127.93" style="fill: #3d1c47"/>
+      </g>
+    </g>
+    <g style="clip-path: url(#e)">
+      <g style="clip-path: url(#b)">
+        <rect x="45.76" y="45.76" width="94.34" height="87.34" style="fill: #3d1c47"/>
+      </g>
+    </g>
+  </g>
+</svg>

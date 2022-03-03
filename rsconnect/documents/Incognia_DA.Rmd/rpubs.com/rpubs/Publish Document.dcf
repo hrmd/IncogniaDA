@@ -1,0 +1,11 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/872601/e58d70859536488b91f1878333817689
+bundleId: https://api.rpubs.com/api/v1/document/872601/e58d70859536488b91f1878333817689
+url: http://rpubs.com/hugodaher/872601
+when: 1646295296.97103
+lastSyncTime: 1646295296.97103

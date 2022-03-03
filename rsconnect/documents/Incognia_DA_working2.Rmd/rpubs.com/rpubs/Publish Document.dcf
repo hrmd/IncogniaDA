@@ -1,0 +1,11 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/873286/29d65955e3d743d79c4cf8e4f1d7b598
+bundleId: https://api.rpubs.com/api/v1/document/873286/29d65955e3d743d79c4cf8e4f1d7b598
+url: http://rpubs.com/hugodaher/873286/edit
+when: 1646323973.75243
+lastSyncTime: 1646323973.75243
