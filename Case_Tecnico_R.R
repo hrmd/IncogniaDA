@@ -92,9 +92,9 @@ tb$event_date <- as.Date(tb$event_timestamp,format="%Y-%m-%d")
 
 # Creating variable Weekday
 
-Sys.setlocale("LC_ALL", "Portuguese")
+#Sys.setlocale("LC_ALL", "Portuguese")
 #Sys.getlocale("LC_TIME")
-#Sys.setlocale("LC_TIME","English")
+Sys.setlocale("LC_TIME","English")
 tb$weekday <- weekdays(tb$event_date)
 tb$wday <- as.POSIXlt(tb$event_date)$wday
 
@@ -148,6 +148,10 @@ tb_num <- select(tb,c("distance_fl",
                       "device_age",
                       "event_hour",
                       "score_risk"))
+
+# Exporting new dataframe to CSV file
+df <- data.frame(tb)
+write.csv(df,"C:\\Users\\Toccato\\OneDrive\\Work Experience\\Incognia\\Case\\r\\Dados\\hugo_incognia_db_output.csv", row.names = TRUE)
 
 # Absolute frequency
 freq1 <- table(tb[c('is_emulator')])
