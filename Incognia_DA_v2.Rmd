@@ -18,7 +18,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # Incognia Data Analysis Report
 
 ## Introduction
-Statistical analysis is a efficient way to get insights about any data, 
+Statistical analysis is an efficient way to get insights about any data, 
 making anyone able to ask the right question. In addition, using the 
 best technologies is crucial to get better results and faster. 
 Therefore, this analysis used the powerful Language R to load and 
@@ -27,9 +27,13 @@ with RStudio tool. Thus, this report has the result of statistical
 thinking that collected meaningful data to answer the right question 
 with detailed analysis of patterns found in the data, making possible 
 to draw conclusions that go beyond the observed data.
+  
+This report contains parts of the R code the was considered important to 
+explain how was obtained the analysis and charts. However, the full 
+code will be sent at the same time.  
 
 ## Dataset description
-Each event in the dataset analysed was a login to the client's app and 
+Each event in the dataset analyzed was a login to the client's app and 
 the purpose of the analysis was to find patterns related to accounts and 
 devices that indicate suspicious behavior, witch is possibly associated 
 with fraud. The dataset contains records from July 2021 and it's a great 
@@ -96,9 +100,8 @@ tb <- read.table("Dados/hugo_incognia_db_for_da_test.csv",
 Dataset size is **`r dim(tb)[1]`** rows and **`r dim(tb)[2]`** columns
 
 
-> Compactly displaying the structure of dataset
-
-```{r, echo=FALSE}
+```{r eval=FALSE, include=FALSE}
+# Compactly displaying the structure of dataset
 str(tb)
 ```
 
@@ -158,14 +161,17 @@ The date range of the dataset is:
 
 > Missing values
 
-```{r}
+```{r include=FALSE}
 sapply(tb, function(x) sum(is.na(x)))
+```
+
+```{r}
 Amelia::missmap(tb, main = "Missing Values")
 ```
 
 There are `r sum(is.na(tb))` missing values. However, all missing values are in
 a location variable, which is crucial to determine risk because it's a login
-attempt without location information. Solution was replace for -1 instead
+attempt without location information. Solution was replacing **"NA"** for **-1** instead
 removing.
 
 ```{r}
@@ -177,7 +183,11 @@ tb <- tidyr::replace_na(tb, list(distance_fl = -1))
 ```{r}
 tb$age_category <- cut(tb$device_age, 
             breaks = c(0,1,7,30,365,Inf),
-            labels = c("Day","Week","Month","Year","Year+"), right = FALSE)
+            labels = c("Day",
+                       "Week",
+                       "Month",
+                       "Year",
+                       "Year+"), right = FALSE)
 ```
 
 > Creating a Distance to frequent location Category
@@ -188,22 +198,32 @@ tb$distance_group <- cut(tb$distance_fl,
                               labels = c("No Location",
                                          "Freq Location",
                                          "Near FL",
-                                         "Far FL"), right = FALSE)
+                                         "Far FL"), 
+                         right = FALSE)
 ```
 
 > Creating Risk Score variable
 
 ```{r}
 tb$score_risk = 0
-tb$score_risk <- tb$score_risk + ifelse(tb$event_hour>=0 & tb$event_hour<=6,1,0)
-tb$score_risk <- tb$score_risk + ifelse(tb$distance_group=="No Location",3,0)
-tb$score_risk <- tb$score_risk + ifelse(tb$distance_group=="Far FL",2,0)
-tb$score_risk <- tb$score_risk + ifelse(tb$distance_group=="Near FL",1,0)
-tb$score_risk <- tb$score_risk + ifelse(tb$age_category=="Day",1,0)
-tb$score_risk <- tb$score_risk + ifelse(tb$is_emulator=="true",3,0)
-tb$score_risk <- tb$score_risk + ifelse(tb$fake_location=="true",3,0)
-tb$score_risk <- tb$score_risk + ifelse(tb$root_permissions=="true",3,0)
-tb$score_risk <- tb$score_risk + ifelse(tb$official_store=="false",3,0)
+tb$score_risk <- tb$score_risk + 
+  ifelse(tb$event_hour>=0 & tb$event_hour<=6,1,0)
+tb$score_risk <- tb$score_risk + 
+  ifelse(tb$distance_group=="No Location",3,0)
+tb$score_risk <- tb$score_risk + 
+  ifelse(tb$distance_group=="Far FL",2,0)
+tb$score_risk <- tb$score_risk + 
+  ifelse(tb$distance_group=="Near FL",1,0)
+tb$score_risk <- tb$score_risk + 
+  ifelse(tb$age_category=="Day",1,0)
+tb$score_risk <- tb$score_risk + 
+  ifelse(tb$is_emulator=="true",3,0)
+tb$score_risk <- tb$score_risk + 
+  ifelse(tb$fake_location=="true",3,0)
+tb$score_risk <- tb$score_risk + 
+  ifelse(tb$root_permissions=="true",3,0)
+tb$score_risk <- tb$score_risk + 
+  ifelse(tb$official_store=="false",3,0)
 ```
 
 > Creating Risk Level (category based on score)
@@ -211,7 +231,10 @@ tb$score_risk <- tb$score_risk + ifelse(tb$official_store=="false",3,0)
 ```{r}
 tb$risk_level <- cut(tb$score_risk, 
                               breaks = c(0,2,3,Inf),
-                              labels = c("Low","Medium","High"), right = FALSE)
+                              labels = c("Low",
+                                         "Medium",
+                                         "High"), 
+                     right = FALSE)
 ```
 
 ```{r include=FALSE}
@@ -286,7 +309,7 @@ GGally::ggpairs(tb_num, upper =
     panel.background = ggplot2::element_rect(fill = "grey95"))
 ```
   
-> Heatmap to analyse correlation between variables
+> Heatmap to analyze correlation between variables
   
 In this heatmap it is possible to observe that there is little or no 
 correlation between the numerical variables.  
@@ -459,13 +482,13 @@ ggplot(tb_pivot, mapping = aes(x=numeric_var, y=values, fill="red")) +
 > Boxplot analysis - Boolean Variables
   
 The box plots below show the data variation of the Boolean variables 
-in relation to the Device Age in an attempt to identify any correlation 
+in relation to the Device Age to identify any correlation 
 between all of them.   
 
 Moreover, in the last box plot below, there is a relationship between 
- Device Age and Distance to Frequent Location category, 
- showing how most of the devices with no locations available 
- are device in the minimal age.  
+Device Age and Distance to Frequent Location category, 
+showing how most of the devices with no locations available 
+are device in the minimal age.  
  
 ```{r, echo=FALSE}
 
@@ -512,7 +535,9 @@ box4 <- ggplot(tb,
 
 # GRid
 grid.arrange(box1, box2, box3, box4, nrow=2, ncol=2)
+```
 
+```{r, echo=FALSE}
 # Distance to Frequent Location Category vs Device Age
 ggplot(tb, aes(x = distance_group, 
                y = device_age, fill = distance_group)) + 
@@ -563,13 +588,13 @@ ggplot(df, aes(x=value)) +
   
 > Area chart analysis
   
- The area chart gives a good perception of the proportionality of the 
- risk level over the days the event occurred. According to the chart, 
- there is no oscillation in high-risk events in relation to the day of the 
- week, while the risk levels low and medium show oscillation on 
- days that are weekends.  
- Meanwhile, the stacked bar chart below confirms this information 
- showing fewer events on Sundays.  
+The area chart gives a good perception of the proportionality of the 
+risk level over the days the event occurred. According to the chart, 
+there is no oscillation in high-risk events in relation to the day of the 
+week, while the risk levels low and medium show oscillation on 
+days that are weekends.  
+Meanwhile, the stacked bar chart below confirms this information 
+showing fewer events on Sundays.  
  
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Event Date
@@ -604,7 +629,7 @@ ggplot(df, aes(x=reorder(weekday,wday),
   scale_y_continuous(labels = comma)
 ```
 
-### Analysis Coclusion
+### Analysis Conclusion
 The dataset analysis found patterns related to the accounts and devices that 
 indicate suspicious behavior, possibly associated with fraud. In this report, 
 it is possible to understand how these patterns occur and how often. Moreover, 
@@ -612,7 +637,7 @@ with the patterns found, it was possible to create a variable that measures
 risk with a score points. The higher the score, the greater the risk. 
 In addition, another variable was defined to categorize the risk in 3 levels: 
 **Low**, **Medium** and **High**. Thus, Incognia will be able to improve the 
-detection algorithm and increase efficiency in the communication with the
+detection algorithm and increase efficiency in the communication with the 
 financial client in order to avoid fraud. 
 
 ***
@@ -657,7 +682,7 @@ tb_ml <- df[sample(nrow(df), 3000), ]
 ```
 
 > Suggesting a variable as a possible fraud 
-> Risk Score greater than 3
+> Risk Score greater than 4.
 
 ```{r}
 
@@ -692,7 +717,9 @@ set.seed(12345)
 > Selecting rows according to variable IS_FRAUD
 
 ```{r}
-index <- createDataPartition(tb_ml$is_fraud, p = 0.75, list = FALSE)
+index <- createDataPartition(tb_ml$is_fraud, 
+                             p = 0.75, 
+                             list = FALSE)
 ```
 
 > Setting training data as a subset
@@ -714,11 +741,17 @@ prop.table(table(data_training$is_fraud))
 
 > Percentage comparison between training classes and original dataset
 
-```{r}
- 
-data_comparison <- cbind(prop.table(table(data_training$is_fraud)), 
-                       prop.table(table(tb_ml$is_fraud)))
+```{r include=FALSE}
+data_comparison <- cbind(
+  prop.table(
+    table(
+      data_training$is_fraud)),
+  prop.table(table(tb_ml$is_fraud)))
 colnames(data_comparison) <- c("Training", "Original")
+
+```
+
+```{r}
 data_comparison
 ```
 
@@ -734,9 +767,10 @@ melt_data_comparison
 > Plot - Training vs original
 
 ```{r}
-
 ggplot(melt_data_comparison, aes(x = X1, y = value)) + 
-  geom_bar( aes(fill = X2), stat = "identity", position = "dodge") + 
+  geom_bar( aes(fill = X2), 
+            stat = "identity", 
+            position = "dodge") + 
   ggtitle("Training vs original") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
@@ -772,15 +806,19 @@ predict_v1 <- predict(model_v1, data_test)
 
 > Confusion Matrix to calculate a cross-tabulation of observed and predicted classes
 
+```{r include=FALSE}
+cm_v1 <- caret::confusionMatrix(predict_v1, 
+                                data_test$is_fraud, 
+                                positive = "1")
+```
+
 ```{r}
-cm_v1 <- caret::confusionMatrix(predict_v1, data_test$is_fraud, positive = "1")
 cm_v1
 ```
 
 > Precision, Recall e F1-Score, measures to evaluate predict model
 
 ```{r}
-# Precision, Recall e F1-Score, measures to evaluate predict model
 y <- data_test$is_fraud
 y_pred_v1 <- predict_v1
 
@@ -796,7 +834,6 @@ df2
 > 
 
 ```{r include=FALSE}
-
 table(data_training$is_fraud)
 prop.table(table(data_training$is_fraud))
 ```
@@ -805,7 +842,8 @@ prop.table(table(data_training$is_fraud))
 
 ```{r}
 set.seed(9560)
-data_training_bal <- SMOTE(is_fraud ~ ., data  = data_training) 
+data_training_bal <- SMOTE(is_fraud ~ ., 
+                           data  = data_training) 
 ```
 
 > 
@@ -817,9 +855,12 @@ prop.table(table(data_training_bal$is_fraud))
 
 > Building model version 2
 
-```{r}
+```{r include=FALSE}
 model_v2 <- randomForest(is_fraud ~ ., data = data_training_bal)
 model_v2
+```
+
+```{r}
 plot(model_v2)
 ```
 
@@ -831,9 +872,14 @@ predict_v2 <- predict(model_v2, data_test)
 
 > Confusion Matrix
 
-```{r}
+```{r include=FALSE}
 
-cm_v2 <- caret::confusionMatrix(predict_v2, data_test$is_fraud, positive = "1")
+cm_v2 <- caret::confusionMatrix(predict_v2, 
+                                data_test$is_fraud, 
+                                positive = "1")
+```
+
+```{r}
 cm_v2
 ```
 
@@ -861,10 +907,11 @@ varImpPlot(model_v2)
 
 > Ranking of the most important variables
 
-```{r}
+```{r include=FALSE}
 imp_var <- importance(model_v2)
 varImportance <- data.frame(Variables = row.names(imp_var), 
-                            Importance = round(imp_var[ ,'MeanDecreaseGini'],2))
+                            Importance = round(
+                              imp_var[ ,'MeanDecreaseGini'],2))
 rankImportance <- varImportance %>% 
   mutate(Rank = paste0('#', dense_rank(desc(Importance))))
 
@@ -914,8 +961,13 @@ predict_v3 <- predict(model_v3, data_test)
 
 > Confusion Matrix
 
+```{r include=FALSE}
+cm_v3 <- caret::confusionMatrix(predict_v3, 
+                                data_test$is_fraud, 
+                                positive = "1")
+```
+
 ```{r}
-cm_v3 <- caret::confusionMatrix(predict_v3, data_test$is_fraud, positive = "1")
 cm_v3
 ```
 
@@ -986,21 +1038,36 @@ pred$is_fraud <- ifelse(pred_new_events==0,"No","Yes")
 pred
 
 ```
-
+  
 ### Model Results
-To create a machine learning model it would be important to have a sample 
+  
+To create a machine learning model, it would be important to have a sample 
 with descriptive information determining whether each event is a fraud 
 event. With this information, it would be possible to create a 
 prediction algorithm model to predict which future events will 
-be a fraud event based on the training and testing model.
+be a fraud event based on the training and testing model.  
+  
+However, the dataset provided did not contain the information about fraud (if was a fraud - yes/no), then a risk score was suggested based on the patterns found in the preliminary analysis. Thus, based on the **hypothesis** that a risk score of 4+ is a **fraud event**, a machine learning model was developed to predict future events.
+  
+According to the model results, the *"device age"* and **"event hour"* were the most important variables in the dataset provided, combined with the variables *"distance to frequent location"* and *"app is from the official store"*. To illustrate, every time this model is used, the ranking order of the most important variables changes depending on the randomly generated dataset of 3000 rows.  
 
-As the dataset did not contain the information (yes/no fraud), then a 
-risk level was suggested based on the patterns found. An experiment 
-was done based on the hypothesis that a score of 4+ is a fraud event. 
-However, the rules that defined this score make the confidence 
-level of the experiment result in 100%. That is, the model does 
-not make mistakes in the predictions. Therefore, the ideal is to 
-have the information (yes/no fraud) to create a predictive model 
-without being biased.
+However, it is important having more data about de event, such as *"distance to frequent location is inside or outside a building"*. In addition, having rules defined about *"risk level"* is exactly the main point to make a efficient algorithm and do the right recommendations to the client, but for this analysis, the recommendation is based on the variables that was considered important to the case analysis. 
+  
+To summarize, this model can predict with **high precision** and **high sensitivity** based on rules defined in previous analysis. Therefore, is crucial is having additional data such as (fraud: yes/no) to create a predictive model without being biased by author analysis.
+  
+
+### Additional Observations
+  
+According to recent research, it is a tendency to use some business intelligence tools to improve visualizations and to interact with the charts and tables. Because this, a Microsoft Power BI dashboard was developed in addition by using as a source the dataset regenerated in this analysis. Thus, the Power BI file (pbix) will be sent as part of this analysis to observe how data interact between charts.
+  
+  
+### Related Links
+
+
+1. Link to this report on RPubs: [link](https://rpubs.com/hugodaher/incognia_v3)
+2. Link to this report on GitHub: [link](https://hrmd.github.io/IncogniaDA/Incognia_DA_v2.html)
+3. Link to the codes on GitHub: [link](https://github.com/hrmd/IncogniaDA/blob/main/Case_Tecnico_R.R)
+4. Link to Power BI dashboard: [link](https://app.powerbi.com/view?r=eyJrIjoiM2Q4NTJlZDYtN2UwMC00Yzg1LWI1ZDQtNmQ2NjVjOTQ0NWEyIiwidCI6IjQzNzZmOTA2LWI1NWYtNDY5Yi1iNTU1LTRkNzUzMTQ2ODE4YiJ9&pageName=ReportSection99245ef3b30b890dc80e)
+
 
 
