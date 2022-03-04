@@ -142,7 +142,7 @@ tb_pivot <- pivot_longer(select
                                "score_risk")),
                              cols = everything(), names_to = "numeric_var",
                              values_to = "values")
-View(tb_pivot)
+
 # Building a numeric only dataframe
 tb_num <- select(tb,c("distance_fl",
                       "device_age",
@@ -151,7 +151,8 @@ tb_num <- select(tb,c("distance_fl",
 
 # Exporting new dataframe to CSV file
 df <- data.frame(tb)
-write.csv(df,"C:\\Users\\Toccato\\OneDrive\\Work Experience\\Incognia\\Case\\r\\Dados\\hugo_incognia_db_output.csv", row.names = TRUE)
+
+write.csv(df,"Dados\\incognia_db_output2.csv", row.names = FALSE)
 
 # Absolute frequency
 freq1 <- table(tb[c('is_emulator')])

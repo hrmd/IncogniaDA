@@ -1,0 +1,1003 @@
+---
+title: "Incognia Data Analysis"
+author: "Hugo Daher"
+date: "`r Sys.Date()`"
+output_dir: "."
+output:
+  prettydoc::html_pretty:
+    theme: hpstr
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+![](Dados/Incognia-Logo-Purple-735x129.png)
+
+# Incognia Data Analysis Report
+
+## Introduction
+Statistical analysis is a efficient way to get insights about any data, 
+making anyone able to ask the right question. In addition, using the 
+best technologies is crucial to get better results and faster. 
+Therefore, this analysis used the powerful Language R to load and 
+transform the dataset provided, creating significant visualizations 
+with RStudio tool. Thus, this report has the result of statistical 
+thinking that collected meaningful data to answer the right question 
+with detailed analysis of patterns found in the data, making possible 
+to draw conclusions that go beyond the observed data.
+
+## Dataset description
+Each event in the dataset analysed was a login to the client's app and 
+the purpose of the analysis was to find patterns related to accounts and 
+devices that indicate suspicious behavior, witch is possibly associated 
+with fraud. The dataset contains records from July 2021 and it's a great 
+dataset for evaluating linear regression models.
+
+## Initial dataset schema
+* event_id: identifier of the event.
+* event_timestamp: event datetime in milliseconds.
+* account_id: identifier of the account associated with the event.
+* device: identifier of the device that performed the operation.
+* distance_fl: distance (in meters) from the device, 
+at the time of the event, to one of the frequent locations related to 
+the account.
+* device_age_days: days since an account appeared related to a device.
+* is_emulator: indicates whether the device is an emulator.
+* has_fake_location: indicates whether the device was using false 
+locations at the time of the operation.
+* has_root_permissions: indicates whether the device has device 
+administrator permissions.
+* app_is_from_official_store: indicates whether or not the app used 
+to perform the operation came from an official store.
+
+
+***
+
+## Dataset processing
+
+```{r Libraries, echo=FALSE, eval=FALSE}
+#knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+### Loading libraries
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(Amelia)
+library(caret)
+library(reshape)
+library(randomForest)
+library(e1071)
+library(tidyr)
+library(DMwR)
+library(GGally)
+library(stringr)
+library(gridExtra)
+library(scales)
+library(viridis)
+library(hrbrthemes)
+library(psych)
+
+```
+
+### Loading dataset
+
+```{r Dataset}
+
+tb <- read.table("Dados/hugo_incognia_db_for_da_test.csv",
+                    dec = ".",
+                    sep = ",",
+                    h = T,
+                    fileEncoding = "windows-1252")
+```
+
+### Dataset general information
+
+Dataset size is **`r dim(tb)[1]`** rows and **`r dim(tb)[2]`** columns
+
+
+> Compactly displaying the structure of dataset
+
+```{r, echo=FALSE}
+str(tb)
+```
+
+### Dataset transformation
+
+> Removing id column, not necessary for analysis
+
+```{r}
+tb$event_id <- NULL
+```
+
+> Shortening some column names
+
+```{r}
+names(tb)[4] <- "distance_fl"
+names(tb)[5] <- "device_age"
+names(tb)[7] <- "fake_location"
+names(tb)[8] <- "root_permissions"
+names(tb)[9] <- "official_store"
+
+```
+
+> Converting variable to integer
+
+```{r, eval=FALSE}
+tb$distance_fl <- as.integer(tb$distance_fl)
+```
+
+> Converting miliseconds to timestamp
+
+```{r}
+tb$event_timestamp <- as.POSIXct(tb$event_timestamp / 1000, 
+                                 origin = "1970-01-01", 
+                                 tz = "UTC")
+```
+
+```{r eval=FALSE, include=FALSE}
+#Sys.setlocale("LC_TIME","Portuguese")
+#Sys.setlocale("LC_TIME","English")
+#Sys.getlocale("LC_TIME")
+```
+
+> Creating variable Event Hour, Date and Weekday
+
+```{r}
+tb$event_hour <- format(tb$event_timestamp,"%H")
+tb$event_hour <- as.numeric(tb$event_hour)
+tb$event_date <- as.Date(tb$event_timestamp,format="%Y-%m-%d")
+Sys.setlocale("LC_TIME","English")
+tb$weekday <- weekdays(tb$event_date)
+tb$wday <- as.integer(as.POSIXlt(tb$event_date)$wday)
+
+```
+The date range of the dataset is: 
+**`r min(tb$event_date)`** to **`r max(tb$event_date)`**
+
+
+> Missing values
+
+```{r}
+sapply(tb, function(x) sum(is.na(x)))
+Amelia::missmap(tb, main = "Missing Values")
+```
+
+There are `r sum(is.na(tb))` missing values. However, all missing values are in
+a location variable, which is crucial to determine risk because it's a login
+attempt without location information. Solution was replace for -1 instead
+removing.
+
+```{r}
+tb <- tidyr::replace_na(tb, list(distance_fl = -1))
+```
+
+> Creating a Device Age Category
+
+```{r}
+tb$age_category <- cut(tb$device_age, 
+            breaks = c(0,1,7,30,365,Inf),
+            labels = c("Day","Week","Month","Year","Year+"), right = FALSE)
+```
+
+> Creating a Distance to frequent location Category
+
+```{r}
+tb$distance_group <- cut(tb$distance_fl, 
+                              breaks = c(-1,0,1,10,Inf),
+                              labels = c("No Location",
+                                         "Freq Location",
+                                         "Near FL",
+                                         "Far FL"), right = FALSE)
+```
+
+> Creating Risk Score variable
+
+```{r}
+tb$score_risk = 0
+tb$score_risk <- tb$score_risk + ifelse(tb$event_hour>=0 & tb$event_hour<=6,1,0)
+tb$score_risk <- tb$score_risk + ifelse(tb$distance_group=="No Location",3,0)
+tb$score_risk <- tb$score_risk + ifelse(tb$distance_group=="Far FL",2,0)
+tb$score_risk <- tb$score_risk + ifelse(tb$distance_group=="Near FL",1,0)
+tb$score_risk <- tb$score_risk + ifelse(tb$age_category=="Day",1,0)
+tb$score_risk <- tb$score_risk + ifelse(tb$is_emulator=="true",3,0)
+tb$score_risk <- tb$score_risk + ifelse(tb$fake_location=="true",3,0)
+tb$score_risk <- tb$score_risk + ifelse(tb$root_permissions=="true",3,0)
+tb$score_risk <- tb$score_risk + ifelse(tb$official_store=="false",3,0)
+```
+
+> Creating Risk Level (category based on score)
+
+```{r}
+tb$risk_level <- cut(tb$score_risk, 
+                              breaks = c(0,2,3,Inf),
+                              labels = c("Low","Medium","High"), right = FALSE)
+```
+
+```{r include=FALSE}
+# Creating a single column with all numeric variables
+# and building a numeric only dataframe
+
+tb_pivot <- tidyr::pivot_longer(dplyr::select
+                         (dplyr::select_if
+                           (tb,is.numeric),-c("account_id",
+                                              "device",
+                                              "score_risk")),
+                             cols = everything(), names_to = "numeric_var",
+                             values_to = "values")
+
+tb_num <- dplyr::select(dplyr::select_if
+                        (tb,is.numeric),-c("account_id",
+                                           "device",
+                                           "score_risk"))
+```
+
+```{r include=FALSE}
+# Absolute frequency
+freq1 <- table(tb[c('is_emulator')])
+freq2 <- table(tb[c('fake_location')])
+freq3 <- table(tb[c('root_permissions')])
+freq4 <- table(tb[c('official_store')])
+freq5 <- table(tb[c('distance_group')])
+freq6 <- table(tb[c('age_category')])
+freq7 <- table(tb[c('event_hour')])
+freq8 <- table(tb[c('risk_level')])
+
+# Relative frequency
+freq_rel1 <- round(prop.table(freq1),7)*100
+freq_rel2 <- round(prop.table(freq2),7)*100
+freq_rel3 <- round(prop.table(freq3),7)*100
+freq_rel4 <- round(prop.table(freq4),7)*100
+freq_rel5 <- round(prop.table(freq5),4)*100
+freq_rel6 <- round(prop.table(freq6),4)*100
+freq_rel7 <- round(prop.table(freq7),4)*100
+freq_rel8 <- round(prop.table(freq8),4)*100
+```
+
+### Variables added to the dataset schema
+* event_hour: hour of the event day.
+* event_date: event date (yyyy-mm-dd)
+* age_category: variable device_age sliced in a category 
+(**"Day"**, **"Week"**, **"Month"**, **"Year"**, **"Year+"**)
+* distance_group: variable distance_fl sliced in a 
+category (**"No Location"**, **"Freq Location"**, **"Near FL"**, **"Far FL"**)
+* score_risk: variable that accumulates points whenever another 
+variable indicates some risk
+* risk_level: variable score_risk sliced in a category 
+(**"Low"**, **"Medium"**, **"High"**)
+
+
+### Graphical representation of dataset 
+
+
+```{r 16-ggpairs, eval=FALSE, include=FALSE}
+# Evaluating correlation between variables
+GGally::ggpairs(tb_num, upper = 
+                  list(continuous = 
+                         GGally::wrap("cor", size = 3))) +
+  ggplot2::theme(
+    axis.text = ggplot2::element_text(size = 6),
+    axis.title = ggplot2::element_text(size = 6),
+    legend.background = ggplot2::element_rect(fill = "white"),
+    panel.grid.major = ggplot2::element_line(colour = NA),
+    panel.grid.minor = ggplot2::element_blank(),
+    panel.background = ggplot2::element_rect(fill = "grey95"))
+```
+
+> Heatmap to analyse correlation between variables
+
+```{r}
+M = cor(tb_num)
+corrplot::corrplot(M, method = 'color', order = 'alphabet')
+```
+
+In this heatmap it is possible to observe that there is little or no 
+correlation between the numerical variables
+  
+> Barplot analysis
+
+```{r, echo=FALSE}
+library(ggplot2)
+library(scales)
+# Risk Level
+df = data.frame(value = freq8)
+bar1 <- ggplot(data=df, aes(x=value.Var1, y=value.Freq)) +
+  geom_bar(stat="identity", fill=c("turquoise","khaki",2)) +
+  geom_text(aes(label=value.Freq), vjust=0, size=3)+
+  ggtitle("Risk Level") +
+  labs(y = "Count", 
+       x = "Risk Level") +  
+  theme(title = element_text(size = 10, color = "turquoise4")) +
+  scale_y_continuous(labels = comma)
+
+# Is Emulator
+df = data.frame(value = freq1)
+bar2 <- ggplot(data=df, aes(x=value.Var1, y=value.Freq)) +
+  geom_bar(stat="identity", fill=c(2,3)) +
+  geom_text(aes(label=value.Freq), vjust=0, size=3)+
+  ggtitle("Is Emulator") +
+  labs(y = "Count", 
+       x = "Category") +  
+  theme(title = element_text(size = 10, color = "turquoise4")) +
+  scale_y_continuous(labels = comma)
+
+# Has Fake Location
+df = data.frame(value = freq2)
+bar3 <- ggplot(data=df, aes(x=value.Var1, y=value.Freq)) +
+  geom_bar(stat="identity", fill=c(2,3)) +
+  geom_text(aes(label=value.Freq), vjust=0, size=3)+
+  ggtitle("Has Fake Location") +
+  labs(y = "Count", 
+       x = "Category") +  
+  theme(title = element_text(size = 10, color = "turquoise4")) +
+  scale_y_continuous(labels = comma)
+
+# Has Root Permissions
+df = data.frame(value = freq3)
+bar4 <- ggplot(data=df, aes(x=value.Var1, y=value.Freq)) +
+  geom_bar(stat="identity", fill=c(2,3)) +
+  geom_text(aes(label=value.Freq), vjust=0, size=3)+
+  ggtitle("Has Root Permissions") +
+  labs(y = "Count", 
+       x = "Category") +  
+  theme(title = element_text(size = 10, color = "turquoise4")) +
+  scale_y_continuous(labels = comma)
+
+# App is from official store
+df = data.frame(value = freq4)
+bar5 <- ggplot(data=df, aes(x=value.Var1, y=value.Freq)) +
+  geom_bar(stat="identity", fill=c(2,"turquoise")) +
+  geom_text(aes(label=value.Freq), vjust=0, size=3)+
+  ggtitle("App from official store") +
+  labs(y = "Count", 
+       x = "Category") +  
+  theme(title = element_text(size = 10, color = "turquoise4")) +
+  scale_y_continuous(labels = comma)
+
+# Distance to FL Category
+df = data.frame(value = freq5)
+bar6 <- ggplot(data=df, aes(x=value.Var1, y=value.Freq)) +
+  geom_bar(stat="identity", fill=c(2,"turquoise4","turquoise","khaki")) +
+  geom_text(aes(label=value.Freq), vjust=0, size=3)+
+  ggtitle("Distance to Frequent Location Category") +
+  labs(y = "Count", 
+       x = "Category") +  
+  theme(title = element_text(size = 10, color = "turquoise4")) +
+  scale_y_continuous(labels = comma)
+
+# Device Age Category
+df = data.frame(value = freq6)
+bar7 <- ggplot(data=df, aes(x=value.Var1, y=value.Freq)) +
+  geom_bar(stat="identity", fill=c(2,"thistle","khaki","turquoise","turquoise4")) +
+  geom_text(aes(label=value.Freq), vjust=0, size=3)+
+  ggtitle("Device Age Category") +
+  labs(y = "Count", 
+       x = "Category") +  
+  theme(title = element_text(size = 10, color = "turquoise4")) +
+  scale_y_continuous(labels = comma)
+
+# Hour analysis
+df = data.frame(value = freq7)
+bar8 <- ggplot(data=df, aes(x=value.Var1, y=value.Freq)) +
+  geom_bar(stat="identity", 
+           fill=c(2,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3)) +
+#  geom_text(aes(label=value.Freq), vjust=-0.3, size=3.5)+
+  ggtitle("Hour of the Day") +
+  labs(y = "Count", 
+       x = "Hour") +  
+  theme(title = element_text(size = 10, color = "turquoise4")) +
+  scale_y_continuous(labels = comma)
+
+library(gridExtra)
+grid.arrange(bar1, bar6, nrow=2, ncol=1)
+grid.arrange(bar7, bar8, nrow=2, ncol=1)
+grid.arrange(bar2, bar3, bar4, bar5, nrow=2, ncol=2)
+```
+
+In the bar charts above, it is possible to observe the distribution of 
+events in the risk_level variable, in which most of the events in this 
+dataset can be considered as low risk.  
+
+Regarding distance_to_frequent_location, the information shows that 
+most of the events occurred in places that are not exactly at the frequent 
+location.  
+
+About the device age category, most of the events are associated 
+with devices aged between one month and one year.  
+
+According to the Hours of Day chart, it is quite visible that few events 
+occurred between midnight and 6am.  
+
+Among the Boolean variables, there were very few contradictory 
+cases related to suspicious behavior of the device.
+  
+```{r eval=FALSE, include=FALSE}
+# Pie Chart
+# set the plotting area into a 1*3 array
+par(mfrow=c(1,2))    
+
+pc <- pie(freq_rel8, labels = freq_rel8 , 
+          main = "Risk Level",
+          col = c("turquoise","khaki",2))
+legend("topright", names(freq_rel8), cex = .8,
+       fill = c("turquoise","khaki",2))
+
+pc <- pie(freq_rel6, labels = freq_rel6 , 
+          main = "Device Age Analysis",
+          col = c(2,"thistle","khaki","turquoise","turquoise4"))
+legend("topright", names(freq_rel6), cex = .7,
+       fill = c(2,"thistle","khaki","turquoise","turquoise4"))
+
+par(mfrow=c(1,1))
+pc <- pie(freq_rel5, labels = freq_rel5 , 
+          main = "Distance to Frequent Location",
+          col = c(2,"turquoise4","turquoise","khaki"))
+legend("topright", names(freq_rel5), cex = .8,
+       fill = c(2,"turquoise4","turquoise","khaki"),)
+```
+
+> Boxplot analysis - Numeric Variables
+
+```{r, echo=FALSE}
+# Numeric variables
+ggplot(tb_pivot, mapping = aes(x=numeric_var, y=values, fill="red")) +
+  geom_boxplot(show.legend = FALSE) + 
+  facet_wrap(.~numeric_var, ncol = 4, scales = "free") +
+  ggtitle("Numeric Variables Analysis") +
+  labs(x = "Numeric Variables") +
+  theme(strip.text.x = element_blank(), 
+        text = element_text(size = 12, color = "turquoise4")) +
+  scale_y_continuous(labels = comma)
+```
+
+In the box plot diagram above, it is possible to analyze the representation 
+of the observed data variation of the numeric variables.
+  
+> Boxplot analysis - Boolean Variables
+
+```{r, echo=FALSE}
+
+# Is Emulator vs Device Age
+box1 <- ggplot(tb, aes(x = reorder(is_emulator, device_age), 
+                       y = device_age, fill = is_emulator)) + 
+  geom_boxplot() +
+#  ggtitle("Is Emulator vs Device Age") +
+  labs(y = "Device Age Days", 
+       x = "Is Emulator") +
+  theme(legend.position = "none", 
+        title = element_text(size = 12, color = "turquoise4"))
+
+# Has Fake Location vs Device Age
+box2 <- ggplot(tb, aes(x = reorder(fake_location, device_age), 
+                       y = device_age, fill = fake_location)) + 
+  geom_boxplot() +
+#  ggtitle("Has Fake Location vs Device Age") +
+  labs(y = "Device Age Days", 
+       x = "Has Fake Location") +
+  theme(legend.position = "none", 
+        title = element_text(size = 12, color = "turquoise4"))
+
+# Has Root Permissions vs Device Age
+box3 <- ggplot(tb, aes(x = reorder(root_permissions, device_age), 
+                       y = device_age, fill = root_permissions)) + 
+  geom_boxplot() +
+#  ggtitle("Has Root Permissions vs Device Age") +
+  labs(y = "Device Age Days", 
+       x = "Has Root Permissions") +
+  theme(legend.position = "none", 
+        title = element_text(size = 12, color = "turquoise4"))
+
+# App From Official Store vs Device Age
+box4 <- ggplot(tb, 
+               aes(x = reorder(official_store, device_age), 
+                   y = device_age, fill = official_store)) + 
+  geom_boxplot() +
+#  ggtitle("App From Official Store vs Device Age") +
+  labs(y = "Device Age Days", 
+       x = "App From Official Store") +
+  theme(legend.position = "none", 
+        title = element_text(size = 12, color = "turquoise4"))
+
+# GRid
+grid.arrange(box1, box2, box3, box4, nrow=2, ncol=2)
+
+# Distance to Frequent Location Category vs Device Age
+ggplot(tb, aes(x = distance_group, 
+               y = device_age, fill = distance_group)) + 
+  geom_boxplot() +
+  ggtitle("Distance to Frequent Location Category vs Device Age") +
+  labs(y = "Device Age Days", 
+       x = "Distance to Frequent Location category") +
+  theme(legend.position = "none", 
+        title = element_text(size = 12, color = "turquoise4"))
+```
+
+The box plots above show the data variation of the Boolean variables 
+in relation to the Device Age in an attempt to identify any correlation 
+between all of them.   
+Moreover, in the last box plot, there is a relationship between 
+ Device Age and Distance to Frequent Location category, 
+ showing how most of the devices with no locations available 
+ are device in the minimal age.  
+ 
+> Scatter Plot analysis 
+
+```{r echo=FALSE}
+# showing relation between two variables and a logical variable
+ggplot(data = tb, aes(y = distance_fl/1000, 
+                      x = device_age)) +
+  geom_point(aes(color = risk_level), size = 2) +
+  ggtitle("Distance to frequent location vs Device Age") +
+  scale_color_manual(values=c("turquoise4","gold",2)) +
+  labs(y = "Distance to frequent location (Km)", 
+       x = "Device Age (days)") +
+  theme(title = element_text(size = 12, color = "turquoise4"))
+```
+
+In the scatter plot above, it is easy observe the data and how 
+scattered data is. In addition, there is little relationship between 
+the distance from the frequent location and device age.
+
+
+> Histogram of distribution
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Device Age
+#df = data.frame(value = tb$device_age)
+temp <- dplyr::summarise(dplyr::group_by(tb,device),max = max(device_age))
+df = data.frame(value = temp$max)
+ggplot(df, aes(x=value)) + 
+  geom_histogram(col="white",aes(fill = ..count..)) +
+  ggtitle("Histogram with distribution curve of Device Age") +
+  labs(y = "Count", 
+       x = "Device Age (days)") +
+  theme(title = element_text(size = 12, color = "turquoise4"))
+```
+
+This histogram illustrates the distribution of events in relation 
+to the maximum age found for each device, concluding that there 
+are usually many more devices with a lower age.  
+  
+> Area chart analysis
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Event Date
+temp <- dplyr::summarise(dplyr::group_by(tb,risk_level,event_date),
+                         qtde = length(event_date))
+df = data.frame(temp)
+ggplot(df, aes(x=event_date,y=qtde, fill=risk_level)) + 
+  geom_area(alpha=0.6 , size=1.0, colour="#ffffff") +
+  scale_fill_manual(values=c("turquoise","khaki",2)) +
+  ggtitle("Distribution curve of Event Date") +
+  labs(y = "Count", 
+       x = "Event Date") +
+  theme(legend.position='right',
+        title = element_text(size = 12, color = "turquoise4"))
+```
+
+ The area chart gives a good perception of the proportionality of the 
+ risk level over the days the event occurred. According to the chart, 
+ there is no oscillation in high-risk events in relation to the day of the 
+ week, while the risk levels low and medium show oscillation on 
+ days that are weekends.  
+ Meanwhile, the stacked bar chart below confirms this information 
+ showing fewer events on Sundays.   
+  
+> Stacked bar chart analysis
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Event Weekday
+temp <- dplyr::summarise(dplyr::group_by(tb,risk_level,weekday,wday),
+                         qtde = length(weekday))
+df = data.frame(temp)
+ggplot(df, aes(x=reorder(weekday,wday),
+               y=qtde, fill=risk_level)) + 
+  geom_bar(stat="identity", position="stack") +
+  scale_fill_manual(values=c("turquoise","khaki",2)) +
+  ggtitle("Day of the Week") +
+  labs(y = "Count", 
+       x = "Weekday") +  
+  theme(title = element_text(size = 12, color = "turquoise4")) +
+  scale_y_continuous(labels = comma)
+```
+
+### Analysis Coclusion
+The dataset analysis found patterns related to the accounts and devices that 
+indicate suspicious behavior, possibly associated with fraud. In this report, 
+it is possible to understand how these patterns occur and how often. Moreover, 
+with the patterns found, it was possible to create a variable that measures 
+risk with a score points. The higher the score, the greater the risk. 
+In addition, another variable was defined to categorize the risk in 3 levels: 
+**Low**, **Medium** and **High**. Thus, Incognia will be able to improve the 
+detection algorithm and increase efficiency in the communication with the
+financial client in order to avoid fraud. 
+
+***
+
+## Machine Learning Model
+
+### Objective
+Create a machine learning model to predict whether a financial 
+event is a fraud event based on patterns found in a dataset.
+
+### Preparing data to the model
+
+> Sample random rows in dataframe
+
+Only 3000 rows were selected at random from the dataset. 
+More than this value requires a higher computational level.
+```{r include=FALSE}
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(Amelia)
+library(caret)
+library(reshape)
+library(randomForest)
+library(e1071)
+library(tidyr)
+library(DMwR)
+library(GGally)
+library(stringr)
+library(gridExtra)
+library(scales)
+library(viridis)
+library(hrbrthemes)
+library(psych)
+```
+
+> Sample random rows in dataframe
+
+```{r}
+df = data.frame(tb)
+tb_ml <- df[sample(nrow(df), 3000), ]
+```
+
+> Suggesting a variable as a possible fraud 
+> Risk Score greater than 3
+
+```{r}
+
+tb_ml$is_fraud <- ifelse(tb_ml$score_risk>=4,1,0)
+```
+
+
+```{r include=FALSE}
+tb_ml$is_fraud <- as.factor(tb_ml$is_fraud)
+tb_ml$account_id <- NULL
+tb_ml$device <- NULL
+tb_ml$event_hour <- as.factor(tb_ml$event_hour)
+tb_ml$score_risk <- NULL
+tb_ml$event_timestamp <- NULL
+tb_ml$is_emulator <- as.factor(tb_ml$is_emulator)
+tb_ml$fake_location <- as.factor(tb_ml$fake_location)
+tb_ml$root_permissions <- as.factor(tb_ml$root_permissions)
+tb_ml$official_store <- as.factor(tb_ml$official_store)
+tb_ml$event_date <- NULL
+tb_ml$weekday <- as.factor(tb_ml$weekday)
+tb_ml$wday <- NULL
+tb_ml$age_category <- NULL
+tb_ml$distance_group <- NULL
+tb_ml$risk_level <- NULL
+
+str(tb_ml)
+
+# Set seed
+set.seed(12345)
+```
+
+> Selecting rows according to variable IS_FRAUD
+
+```{r}
+index <- createDataPartition(tb_ml$is_fraud, p = 0.75, list = FALSE)
+```
+
+> Setting training data as a subset
+
+```{r}
+
+data_training <- tb_ml[index,]
+```
+
+> 
+
+```{r include=FALSE}
+dim(data_training)
+table(data_training$is_fraud)
+
+# Percentages between classes
+prop.table(table(data_training$is_fraud))
+```
+
+> Percentage comparison between training classes and original dataset
+
+```{r}
+ 
+data_comparison <- cbind(prop.table(table(data_training$is_fraud)), 
+                       prop.table(table(tb_ml$is_fraud)))
+colnames(data_comparison) <- c("Training", "Original")
+data_comparison
+```
+
+> 
+
+```{r include=FALSE}
+# Melt Data - Convert columns to rows
+melt_data_comparison <- melt(data_comparison)
+melt_data_comparison
+
+```
+
+> Plot - Training vs original
+
+```{r}
+
+ggplot(melt_data_comparison, aes(x = X1, y = value)) + 
+  geom_bar( aes(fill = X2), stat = "identity", position = "dodge") + 
+  ggtitle("Training vs original") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+> 
+
+```{r include=FALSE}
+# Everything not in the Training Dataset must be in the Test Dataset
+data_test <- tb_ml[-index,]
+dim(data_test)
+dim(data_training)
+```
+
+> Building model version 1
+
+```{r}
+
+model_v1 <- randomForest(is_fraud ~ ., data = data_training)
+```
+
+> 
+
+```{r echo=FALSE}
+model_v1
+plot(model_v1)
+```
+
+> Predicting the test dataset
+
+```{r}
+predict_v1 <- predict(model_v1, data_test)
+```
+
+> Confusion Matrix to calculate a cross-tabulation of observed and predicted classes
+
+```{r}
+cm_v1 <- caret::confusionMatrix(predict_v1, data_test$is_fraud, positive = "1")
+cm_v1
+```
+
+> Precision, Recall e F1-Score, measures to evaluate predict model
+
+```{r}
+# Precision, Recall e F1-Score, measures to evaluate predict model
+y <- data_test$is_fraud
+y_pred_v1 <- predict_v1
+
+precision <- posPredValue(y_pred_v1, y)
+recall <- sensitivity(y_pred_v1, y)
+F1 <- (2 * precision * recall) / (precision + recall)
+
+df2 <- data.frame(precision,recall,F1)
+names(df2) <- c("Precision","Recall","F1")
+df2
+```
+
+> 
+
+```{r include=FALSE}
+
+table(data_training$is_fraud)
+prop.table(table(data_training$is_fraud))
+```
+
+> SMOTE algorithm for unbalanced classification problems
+
+```{r}
+set.seed(9560)
+data_training_bal <- SMOTE(is_fraud ~ ., data  = data_training) 
+```
+
+> 
+
+```{r include=FALSE}
+table(data_training_bal$is_fraud)
+prop.table(table(data_training_bal$is_fraud))
+```
+
+> Building model version 2
+
+```{r}
+model_v2 <- randomForest(is_fraud ~ ., data = data_training_bal)
+model_v2
+plot(model_v2)
+```
+
+> Predicting the test dataset
+
+```{r}
+predict_v2 <- predict(model_v2, data_test)
+```
+
+> Confusion Matrix
+
+```{r}
+
+cm_v2 <- caret::confusionMatrix(predict_v2, data_test$is_fraud, positive = "1")
+cm_v2
+```
+
+> Precision, Recall e F1-Score
+
+```{r}
+y <- data_test$is_fraud
+y_pred_v2 <- predict_v2
+
+precision <- posPredValue(y_pred_v2, y)
+recall <- sensitivity(y_pred_v2, y)
+F1 <- (2 * precision * recall) / (precision + recall)
+
+df3 <- data.frame(precision,recall,F1)
+names(df3) <- c("Precision","Recall","F1")
+df3
+```
+
+> Most important variables to predict
+
+```{r}
+
+varImpPlot(model_v2)
+```
+
+> Ranking of the most important variables
+
+```{r}
+imp_var <- importance(model_v2)
+varImportance <- data.frame(Variables = row.names(imp_var), 
+                            Importance = round(imp_var[ ,'MeanDecreaseGini'],2))
+rankImportance <- varImportance %>% 
+  mutate(Rank = paste0('#', dense_rank(desc(Importance))))
+
+```
+
+```{r echo=FALSE}
+ggplot(rankImportance, 
+       aes(x = reorder(Variables, Importance), 
+           y = Importance, 
+           fill = Importance)) + 
+  geom_bar(stat='identity') + 
+  ggtitle("Ranking of the most important variables") +
+  geom_text(aes(x = Variables, y = 0.5, label = Rank), 
+            hjust = 0, 
+            vjust = 0.55, 
+            size = 4, 
+            colour = 'red') +
+  labs(x = 'Variables') +
+  coord_flip() 
+```
+
+> Building model version 3 with the most important variables
+
+```{r}
+model_v3 <- randomForest(is_fraud ~ device_age + 
+                           event_hour + 
+                           distance_fl +
+                           weekday +
+                           official_store +
+                           root_permissions, 
+                          data = data_training_bal)
+```
+
+```{r include=FALSE}
+model_v3
+```
+
+```{r}
+plot(model_v3)
+```
+
+> Predicting the test dataset
+
+```{r}
+predict_v3 <- predict(model_v3, data_test)
+```
+
+> Confusion Matrix
+
+```{r}
+cm_v3 <- caret::confusionMatrix(predict_v3, data_test$is_fraud, positive = "1")
+cm_v3
+```
+
+> Precision, Recall e F1-Score
+
+```{r}
+y <- data_test$is_fraud
+y_pred_v3 <- predict_v3
+
+precision <- posPredValue(y_pred_v3, y)
+recall <- sensitivity(y_pred_v3, y)
+F1 <- (2 * precision * recall) / (precision + recall)
+df4 <- data.frame(precision,recall,F1)
+names(df4) <- c("Precision","Recall","F1")
+df4
+```
+
+> Salving model file
+
+```{r}
+rds <- paste("Dados/",
+             format(Sys.time(), "%y%m%d%H%M%S"), 
+             "_model_v3.rds",sep = "")
+saveRDS(model_v3, file = rds)
+```
+
+> Predicting three random events
+
+```{r}
+# Input
+device_age <- c(0, 10, 100) 
+event_hour <- c("4", "10", "11") 
+distance_fl <- c(1000, 1, 0)
+weekday <- c("Sunday","Sunday","Sunday")
+official_store <- c("true","true","true")
+root_permissions <- c("false","false","false")
+
+```
+
+```{r include=FALSE}
+new_events <- data.frame(device_age, 
+                         event_hour, 
+                         distance_fl,
+                         weekday,
+                         official_store,
+                         root_permissions)
+
+new_events$weekday <- 
+  factor(new_events$weekday, levels = 
+           levels(data_training_bal$weekday))
+new_events$official_store <- 
+  factor(new_events$official_store, 
+         levels = levels(data_training_bal$official_store))
+new_events$root_permissions <- 
+  factor(new_events$root_permissions, 
+         levels = levels(data_training_bal$root_permissions))
+new_events$event_hour <- 
+  factor(new_events$event_hour, 
+         levels = levels(data_training_bal$event_hour))
+```
+
+> Predictions results
+
+```{r}
+pred_new_events <- predict(model_v3, new_events)
+pred = data.frame(pred_new_events)
+pred$is_fraud <- ifelse(pred_new_events==0,"No","Yes")
+pred
+
+```
+
+### Model Results
+To create a machine learning model it would be important to have a sample 
+with descriptive information determining whether each event is a fraud 
+event. With this information, it would be possible to create a 
+prediction algorithm model to predict which future events will 
+be a fraud event based on the training and testing model.
+
+As the dataset did not contain the information (yes/no fraud), then a 
+risk level was suggested based on the patterns found. An experiment 
+was done based on the hypothesis that a score of 4+ is a fraud event. 
+However, the rules that defined this score make the confidence 
+level of the experiment result in 100%. That is, the model does 
+not make mistakes in the predictions. Therefore, the ideal is to 
+have the information (yes/no fraud) to create a predictive model 
+without being biased.
+
+
